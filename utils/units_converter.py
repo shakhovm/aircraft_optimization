@@ -9,3 +9,8 @@ def feet2meter(feet):
 
 def meter2feet(meter):
     return meter / 0.3048
+
+
+def mperstokt(mps):
+    return mps * 1.94384
+

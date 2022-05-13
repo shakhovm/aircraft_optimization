@@ -1,0 +1,16 @@
+alpha_actor: 0.0005
+alpha_critic: 0.001
+gamma: 0.99
+batch_size: 64
+buffer_size: 24000
+tau: 0.005
+train_begin: 1000
+episodes: 20000
+epochs: 1
+episodes_to_save: 300
+episodes_to_train: 1
+path: "./ddpg/model"
+load_path_critic: "./ddpg/model_critic_model"
+load_path_actor: "./ddpg/model_actor_model"
+reward_path: "./ddpg/pendulum_reward.txt"
+load_models: false

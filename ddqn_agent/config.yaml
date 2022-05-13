@@ -1,0 +1,26 @@
+gamma: 0.999
+minibatch: 128
+episode_steps: 9
+episode_to_save: 5000
+episode_to_monitor: 50
+max_buffer_len: 10000
+episodes: 30000
+begin_train: 1000
+#update_step: 200
+copy_step: 20
+epsilon_delta: 18000
+epsilon_start: 1.05
+
+epsilon_end: 0.01
+load_model: false
+path_to_load: "ddqn3"
+path_to_save: "ddqn6"
+
+# Model
+lr: 0.0001
+model: dqnf
+
+# DQN-F
+
+lambda: 0.3
+margin: 50

@@ -1,0 +1,51 @@
+import torch
+import numpy as np
+
+from dqn_family.general_agent import DQNFamily
+from ddqn_agent.ddqn_model import LinearDDQNModel
+from ddqn_agent.dqn_model import Net
+
+
+class DDQNFAgent(DQNFamily):
+    def __init__(self, conf, env):
+        if conf['model'] == "dqnf":
+            model_type = Net
+        elif conf['model'] == 'ddqnf':
+            model_type = LinearDDQNModel
+
+        super().__init__(config=conf, env=env, model_type=model_type)
+        self.margin = conf['margin']
+        self.lamd = conf['lambda']
+
+    def train_model(self):
+        state, act, reward, next_state, done = \
+            map(lambda x: np.array(x), self.replay_buffer.sample(self.minibatch))
+        o_state, o_act, o_reward, o_next_state, o_done = self.transition_process(state, act, reward, next_state, done)
+        o_reward = (o_reward - o_reward.mean()) / (o_reward.std() + 1e-7)
+        # o_reward = torch.log(o_reward)
+        q = self.model(o_state) #.gather(1, o_act.unsqueeze(1)).squeeze(1)
+
+        q_next = self.target_model(o_next_state)
+        y_hat = o_reward + self.gamma * q_next.max(1)[0] * (1 - o_done)
+        loss_q = (q.gather(1, o_act.unsqueeze(1)).squeeze(1) - y_hat.detach()).pow(2).mean()
+        loss_frontier = torch.Tensor([0])
+        cpu_q = q.to('cpu')
+        for i in range(len(state)):
+            if not self.env.valid_action(state[i, 2], self.actions[act[i], 1]):
+                #         print(state[i, 2], agent.actions[act[i]])
+                k = np.where(self.env.valid_action(state[i, 2], self.actions[:, 1]))[0]
+                # .gather(0, torch.LongTensor(k, device='cpu'))#.squeeze(1).size()
+                min_q_valid = cpu_q[i, k].min()
+                q_invalid = cpu_q[i, act[i]] + self.margin
+                #         print(q_invalid)
+                if min_q_valid < q_invalid:
+                    loss_frontier += (min_q_valid - q_invalid).pow(2)
+        loss = loss_q + self.lamd*loss_frontier.mean()
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        self.training_state['loss'].append(loss.item())
+        self.training_state['fronts'].append(self.lamd*loss_frontier.item())
+        self.training_state['loss_q'].append(loss_q.item())
+
+

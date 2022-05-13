@@ -1,8 +1,11 @@
 import pandas as pd
 
 
-def env_summary(env, agent=None):
-    state = env.reset()
+def env_summary(env, agent=None, random=False):
+    if random:
+        state = env.random_state()
+    else:
+        state = env.reset()
     done = False
     state_info = env.get_state_info()
     state_infos = {key: [value] for key, value in state_info.items()}

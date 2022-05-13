@@ -56,9 +56,9 @@ class AircraftEnv:
 
         self.cruise_mach_range = np.arange(self.aicraft.cruise_mach['minimum'],
                                            self.aicraft.cruise_mach['maximum'], 0.01)
-        self.cruise_alt_min = self.aicraft.cruise_alt['minimum'] * 1000 - 400
+        self.cruise_alt_min = self.aicraft.cruise_alt['minimum'] * 1000
 
-        self.cruise_alt_max = self.aicraft.cruise_alt['maximum'] * 1000 + 400
+        self.cruise_alt_max = self.aicraft.cruise_alt['maximum'] * 1000
 
         self.estimated_time = estimated_time
         self._load_wind_info()
@@ -91,6 +91,11 @@ class AircraftEnv:
         direction = np.interp(altitude, self._wind_altitude, self._wind_direction[:, trajectory, waypoint])
         return magnitude, direction
 
+    def _solver_wind_interpolation(self, m, altitude, trajectory, waypoint):
+        magnitude = np.interp(altitude, self._wind_altitude, self._wind_magnitude[:, trajectory, waypoint])
+        direction = np.interp(altitude, self._wind_altitude, self._wind_direction[:, trajectory, waypoint])
+        return magnitude, direction
+
     def _waypoints_to_array(self):
         ar = []
         for trajectory in self.waypoints:
@@ -104,37 +109,44 @@ class AircraftEnv:
                                2 * (tas * wind_speed * np.cos(course - wind_direction + wind_correction_angle)))
         return ground_speed, wind_correction_angle
 
-    def valid_action(self, current_altitude, altitude):
-        return (current_altitude + altitude <= self.cruise_alt_max) & \
-               (current_altitude + altitude >= self.cruise_alt_min)
+    @staticmethod
+    def solver_ground_speed(m, tas, wind_speed, wind_direction, course):
+        wind_correction_angle = m.asin((wind_speed / tas) *
+                                          m.sin(course - wind_direction))
+        ground_speed = m.sqrt(tas ** 2 + wind_speed ** 2 +
+                               2 * (tas * wind_speed * m.cos(course - wind_direction + wind_correction_angle)))
+        return ground_speed, wind_correction_angle
 
-    def random_state(self):
-        self.state = {
-            "trajectory": np.random.randint(self.n_routes),
-            "waypoint": np.random.randint(self.n_waypoints - 2),
-            "altitude": np.random.uniform(self.cruise_alt_min + 400, self.cruise_alt_max - 400),
-            "total_time": 0
-        }
+    def solver_step(self, action, m):
+        self.state['altitude'] += action['altitude']
 
-        self.state_info = {
-            "trajectory": self.state['trajectory'],
-            "waypoint": self.state['waypoint'],
-            "speed": 0,
-            "tas": 0,
-            "distance": 0,
-            "wind_magnitude": 0,
-            "wind_direction": 0,
-            "course": 0,
-            "correction_angle": 0,
-            "altitude": self.state['altitude'],
-            "time_for_distance": 0,
-            "fuel_burn": 0,
-            "total_time": 0,
-            "reward": 0,
-            "fuel_flow": 0,
-            "mach_number": 0
-        }
-        return self.state
+        wp_index = self.state['waypoint']
+        self.state['waypoint'] += 1
+        start_wp = self.waypoints[self.state['trajectory']][wp_index]
+        end_wp = self.waypoints[action['trajectory']][wp_index + 1]
+
+        # Get wind magnitude, direction for altitude
+        wind_magnitude, wind_direction = 1, 1
+
+        # s12 - distance, azi1 - bearing; Calculate ground speed
+        two_points_info = geod.Inverse(start_wp.latitude, start_wp.longitude, end_wp.latitude, end_wp.longitude)
+        print(self.state['altitude'])
+        tas = mach2tas(action["mach_number"], self.state['altitude'])
+        tas = 2000 * action['mach_number'] #mach2tas(action["mach_number"], self.state['altitude'])
+        velocity, wind_correction_angle = self.solver_ground_speed(m, tas, wind_magnitude, np.deg2rad(wind_direction),
+                                                            np.deg2rad(two_points_info['azi1']))
+
+        fuel_flow = self.state['altitude'] * action['mach_number'] * 100 #self.aicraft.fuel_enroute(30000, tas, altitude, path_angle=0) *10**2
+
+        time_for_distance = two_points_info['s12'] / velocity
+
+        fuel_burn = fuel_flow * time_for_distance
+
+        # Define reward
+        reward = -fuel_burn
+
+        self.state['trajectory'] = action['trajectory']
+        return self.state, reward
 
     def reset(self):
         self.state = {
@@ -159,16 +171,12 @@ class AircraftEnv:
             "fuel_burn": 0,
             "total_time": 0,
             "reward": 0,
-            "fuel_flow": 0,
-            "mach_number": 0
+            "fuel_flow": 0
         }
         return self.state
 
     def step(self, action, for_training=True):
         self.state['altitude'] += action['altitude']
-        bad_condititions = self.state['altitude'] < self.cruise_alt_min or self.state['altitude'] > \
-                           self.cruise_alt_max
-
         altitude = self.state['altitude']
         wp_index = self.state['waypoint']
         self.state['waypoint'] += 1
@@ -177,17 +185,6 @@ class AircraftEnv:
 
         # Get wind magnitude, direction for altitude
         wind_magnitude, wind_direction = self._wind_interpolation(altitude, self.state['trajectory'], wp_index)
-        self.state['trajectory'] = action['trajectory']
-        reward = 2000
-        if bad_condititions:
-            reward = 0
-            self.state_info['fuel_burn'] = 2000
-            # reward += (self.n_waypoints - wp_index)
-            done = True
-            return self.state, reward, done
-        else:
-            reward = 2000
-
 
         # s12 - distance, azi1 - bearing; Calculate ground speed
         two_points_info = geod.Inverse(start_wp.latitude, start_wp.longitude, end_wp.latitude, end_wp.longitude)
@@ -205,22 +202,23 @@ class AircraftEnv:
         self.state['total_time'] += time_for_distance
 
         # Define reward
-        reward += -fuel_burn
-        #
-        #
-        # if done and not bad_condititions:
-        #     reward += 3000
+        reward = -fuel_burn
+
+        # if self.state['altitude'] < self.cruise_alt_min or self.state['altitude'] > self.cruise_alt_max:
+        #     reward += -40000
+        #     if for_training:
+        #         done = True
 
         # if abs(action['trajectory'] - self.state['trajectory']) > 1:
         #     reward += -10000
         #     done = True
 
+        self.state['trajectory'] = action['trajectory']
         #
         # if done and self.state['total_time'] > self.estimated_time:
         #     reward += -1000 * (self.state['total_time'] - self.estimated_time)
 
         # Define state info
-        # if self.visualize:
         self.state_info = {
             "trajectory": self.state['trajectory'],
             "waypoint": self.state['waypoint'],
@@ -237,17 +235,16 @@ class AircraftEnv:
             "total_time": self.state["total_time"],
             "fuel_flow": fuel_flow,
 
-            "reward": reward,
-            "mach_number": action['mach_number']
+            "reward": reward
         }
-        # if self.visualize:
-        #     print(f' Velocity {self.state_info["velocity"]}\n tas {self.state_info["tas"]}\n '
-        #           f'Distance {self.state_info["distance"]}\n '
-        #           f'Wind Magnitude/Direction {self.state_info["wind_magnitude"]}/'
-        #           f'{self.state_info["wind_direction"]}\n Course {self.state_info["course"]}\n '
-        #           f'Altitude {self.state_info["altitude"]}\n '
-        #           f'Time For Distance {self.state_info["time_for_distance"]}\n '
-        #           f'Fuel Burn {self.state_info["fuel_burn"]}\n Total Time {self.state["total_time"]}')
+        if self.visualize:
+            print(f' Velocity {self.state_info["velocity"]}\n tas {self.state_info["tas"]}\n '
+                  f'Distance {self.state_info["distance"]}\n '
+                  f'Wind Magnitude/Direction {self.state_info["wind_magnitude"]}/'
+                  f'{self.state_info["wind_direction"]}\n Course {self.state_info["course"]}\n '
+                  f'Altitude {self.state_info["altitude"]}\n '
+                  f'Time For Distance {self.state_info["time_for_distance"]}\n '
+                  f'Fuel Burn {self.state_info["fuel_burn"]}\n Total Time {self.state["total_time"]}')
 
         return self.state, reward, done
 
