@@ -1,0 +1,18 @@
+gamma: 0.999
+minibatch: 15
+episode_steps: 9
+episode_to_save: 5000
+episode_to_monitor: 50
+episodes: 100000
+#update_step: 200
+
+load_model: false
+path_to_load: "ddqn3"
+path_to_save: "saved_models/actor_critic"
+
+# Model
+lr: 0.0001
+device: cpu
+
+# Env random init
+episode_init: begin

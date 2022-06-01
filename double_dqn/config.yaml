@@ -1,0 +1,28 @@
+gamma: 0.999
+minibatch: 64
+episode_steps: 9
+episode_to_save: 5000
+episode_to_monitor: 50
+max_buffer_len: 10000
+episodes: 150000
+begin_train: 1000
+copy_step: 20
+epsilon_delta: 50000
+epsilon_start: 1.05
+
+epsilon_end: 0.01
+load_model: false
+path_to_load: "saved_models/double_dqn"
+path_to_save: "saved_models/double_dqn"
+
+# Model
+lr: 0.00008
+device: cpu
+
+# Env random init
+episode_init: begin
+
+# DQN-F
+
+lambda: 0.9
+margin: 100

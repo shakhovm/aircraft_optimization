@@ -1,0 +1,23 @@
+gamma: 0.99
+minibatch: 32
+episode_steps: 9
+episode_to_save: 5000
+episode_to_monitor: 50
+max_buffer_len: 10000
+episodes: 50000
+begin_train: 100
+copy_step: 10
+epsilon_delta: 18000
+epsilon_start: 1.05
+
+epsilon_end: 0.01
+load_model: false
+path_to_load: "ddqn3"
+path_to_save: "saved_models/rainbow"
+
+# Model
+lr: 0.0001
+num_atoms: 101
+Vmin: -2000
+Vmax: -900
+device: cpu

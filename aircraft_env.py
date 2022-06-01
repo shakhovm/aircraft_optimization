@@ -66,6 +66,7 @@ class AircraftEnv:
         self.state = self.reset()
 
         self.visualize = visualize
+        self.possible_altitudes = np.full((5, 9), self.cruise_alt_max)
 
     def _generate_alternative_routes(self):
         possible_angles = [270, 270, 90, 90]  # angles between course and new point (degrees)
@@ -107,6 +108,10 @@ class AircraftEnv:
     def valid_action(self, current_altitude, altitude):
         return (current_altitude + altitude <= self.cruise_alt_max) & \
                (current_altitude + altitude >= self.cruise_alt_min)
+
+    def valid_action2(self, current_altitude, wp, trajectory):
+        return (self.cruise_alt_min <= current_altitude) & \
+               (current_altitude <= self.possible_altitudes[trajectory, wp])
 
     def random_state(self):
         self.state = {
@@ -164,34 +169,36 @@ class AircraftEnv:
         }
         return self.state
 
-    def step(self, action, for_training=True):
-        self.state['altitude'] += action['altitude']
-        bad_condititions = self.state['altitude'] < self.cruise_alt_min or self.state['altitude'] > \
-                           self.cruise_alt_max
+    def act(self, action):
+        altitude = self.state['altitude'] + action['altitude']
+        # bad_conditions = altitude < self.cruise_alt_min or altitude > \
+        #                    self.cruise_alt_max
 
-        altitude = self.state['altitude']
         wp_index = self.state['waypoint']
-        self.state['waypoint'] += 1
+        # print(altitude)
+        # print(self.possible_altitudes[action['trajectory'], wp_index])
+        bad_conditions = not self.valid_action2(altitude, wp_index, action['trajectory'])
+        # bad_conditions = False
         start_wp = self.waypoints[self.state['trajectory']][wp_index]
         end_wp = self.waypoints[action['trajectory']][wp_index + 1]
 
         # Get wind magnitude, direction for altitude
         wind_magnitude, wind_direction = self._wind_interpolation(altitude, self.state['trajectory'], wp_index)
-        self.state['trajectory'] = action['trajectory']
+
         reward = 2000
-        if bad_condititions:
-            reward = 0
-            self.state_info['fuel_burn'] = 2000
+        if bad_conditions:
+            reward = -15000
+            self.state_info['fuel_burn'] = 15000
+            self.state_info["altitude"]= altitude
+            self.state_info["waypoint"]= wp_index + 1
+            self.state_info["trajectory"]= action["trajectory"]
             # reward += (self.n_waypoints - wp_index)
             done = True
-            return self.state, reward, done
-        else:
-            reward = 2000
-
+            return reward, done
 
         # s12 - distance, azi1 - bearing; Calculate ground speed
         two_points_info = geod.Inverse(start_wp.latitude, start_wp.longitude, end_wp.latitude, end_wp.longitude)
-        tas = mach2tas(action["mach_number"], self.state['altitude'])
+        tas = mach2tas(action["mach_number"], altitude)
         velocity, wind_correction_angle = self.ground_speed(tas, wind_magnitude, np.deg2rad(wind_direction),
                                                             np.deg2rad(two_points_info['azi1']))
 
@@ -199,31 +206,16 @@ class AircraftEnv:
                                               path_angle=0)
 
         time_for_distance = two_points_info['s12'] / velocity
-        done = self.state['waypoint'] == self.n_waypoints - 1
+        done = wp_index + 1 == self.n_waypoints - 1
 
         fuel_burn = fuel_flow * time_for_distance
-        self.state['total_time'] += time_for_distance
 
         # Define reward
         reward += -fuel_burn
-        #
-        #
-        # if done and not bad_condititions:
-        #     reward += 3000
 
-        # if abs(action['trajectory'] - self.state['trajectory']) > 1:
-        #     reward += -10000
-        #     done = True
-
-        #
-        # if done and self.state['total_time'] > self.estimated_time:
-        #     reward += -1000 * (self.state['total_time'] - self.estimated_time)
-
-        # Define state info
-        # if self.visualize:
         self.state_info = {
-            "trajectory": self.state['trajectory'],
-            "waypoint": self.state['waypoint'],
+            "trajectory": action['trajectory'],
+            "waypoint": self.state['waypoint'] + 1,
             "speed": velocity,
             "tas": tas,
             "distance": two_points_info['s12'],
@@ -240,6 +232,31 @@ class AircraftEnv:
             "reward": reward,
             "mach_number": action['mach_number']
         }
+        #
+        #
+        # if done and not bad_condititions:
+        #     reward += 3000
+
+        # if abs(action['trajectory'] - self.state['trajectory']) > 1:
+        #     reward += -10000
+        #     done = True
+
+        #
+        if done and self.state['total_time'] > self.estimated_time:
+            print("Hello")
+            reward += -1000 # * (self.state['total_time'] - self.estimated_time)
+
+        # Define state info
+        # if self.visualize:
+        return reward, done
+
+    def step(self, action, for_training=True):
+        reward, done = self.act(action)
+        time_for_distance = self.state_info['time_for_distance']
+        self.state['total_time'] += time_for_distance
+        self.state['waypoint'] += 1
+        self.state['altitude'] += action['altitude']
+        self.state['trajectory'] = action['trajectory']
         # if self.visualize:
         #     print(f' Velocity {self.state_info["velocity"]}\n tas {self.state_info["tas"]}\n '
         #           f'Distance {self.state_info["distance"]}\n '
@@ -268,9 +285,12 @@ class AircraftEnv:
             "altitude": altitude
         }
 
+    def save_possible_altitude(self):
+        # with open("possible_altitudes", 'wb') as f:
+        np.save("possible_altitudes.npy", self.possible_altitudes)
+
     def get_state_info(self):
         return self.state_info
 
     def __repr__(self):
         return "\n".join([f"{key} : {value}" for key, value in self.state_info.items()])
-

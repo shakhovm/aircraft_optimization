@@ -5,7 +5,9 @@ from dqn_family.general_agent import DQNFamily
 from ddqn_agent.ddqn_model import LinearDDQNModel
 from ddqn_agent.dqn_model import Net
 
+# class DDQNF_TraningState
 
+from dqn_family.general_agent import unnormilize_data
 class DDQNFAgent(DQNFamily):
     def __init__(self, conf, env):
         if conf['model'] == "dqnf":
@@ -29,11 +31,15 @@ class DDQNFAgent(DQNFamily):
         y_hat = o_reward + self.gamma * q_next.max(1)[0] * (1 - o_done)
         loss_q = (q.gather(1, o_act.unsqueeze(1)).squeeze(1) - y_hat.detach()).pow(2).mean()
         loss_frontier = torch.Tensor([0])
-        cpu_q = q.to('cpu')
+        cpu_q = q #.to('cpu')
         for i in range(len(state)):
-            if not self.env.valid_action(state[i, 2], self.actions[act[i], 1]):
+            # print(state[i, 2])
+            unnormilized_altitude = unnormilize_data(state[i, 2], self.env.cruise_alt_max,
+                                                     self.env.cruise_alt_min)
+            if not self.env.valid_action(unnormilized_altitude, self.actions[act[i], 1]):
+
                 #         print(state[i, 2], agent.actions[act[i]])
-                k = np.where(self.env.valid_action(state[i, 2], self.actions[:, 1]))[0]
+                k = np.where(self.env.valid_action(unnormilized_altitude, self.actions[:, 1]))[0]
                 # .gather(0, torch.LongTensor(k, device='cpu'))#.squeeze(1).size()
                 min_q_valid = cpu_q[i, k].min()
                 q_invalid = cpu_q[i, act[i]] + self.margin
@@ -44,8 +50,21 @@ class DDQNFAgent(DQNFamily):
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        self.training_state['loss'].append(loss.item())
-        self.training_state['fronts'].append(self.lamd*loss_frontier.item())
-        self.training_state['loss_q'].append(loss_q.item())
+        self.training_state.loss.append(loss.item())
+        self.training_state.loss.append(self.lamd*loss_frontier.item())
+        self.training_state.loss.append(loss_q.item())
 
 
+    def epsilon_greedy(self):
+        if (1 - self.epsilon) <= np.random.random():
+            self.action = np.random.randint(self.action_number)
+            # print(self.actions[self.action])
+        else:
+            state = torch.autograd.Variable(torch.FloatTensor(self.state).to(self.device).unsqueeze(0))
+            # self.model.eval()
+            # with torch.no_grad():
+
+            model_value = self.model(state)
+            self.action = model_value.max(1)[1].item()
+            # self.model.train()
+        return self.action

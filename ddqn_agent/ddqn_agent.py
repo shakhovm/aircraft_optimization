@@ -1,5 +1,5 @@
 from dqn_family.general_agent import DQNFamily
-from ddqn_model import LinearDDQNModel
+from ddqn_agent.ddqn_model import LinearDDQNModel
 
 
 class DDQNAgent(DQNFamily):

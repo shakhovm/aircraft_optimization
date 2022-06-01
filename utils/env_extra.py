@@ -1,7 +1,7 @@
 import pandas as pd
 
 
-def env_summary(env, agent=None, random=False):
+def env_summary(env, agent=None, random=False, to_env=False):
     if random:
         state = env.random_state()
     else:
@@ -13,8 +13,10 @@ def env_summary(env, agent=None, random=False):
         if agent is None:
             action = env.rand_action()
         else:
-            action = agent.best_action(state)
-
+            if to_env:
+                action = agent.best_action(state, env)
+            else:
+                action = agent.best_action(state)
         state, reward, done = env.step(action)
         state_info = env.get_state_info()
 
