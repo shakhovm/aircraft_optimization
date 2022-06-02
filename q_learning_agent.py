@@ -94,19 +94,12 @@ class QTableAgent(GeneralAgent):
 
     def max_action(self, state, env):
         q_state = tuple(state)
-        # print(self.states[2][state[2]])
         q = self.q.copy()
         for i in range(5):
             for k in range(len(self.actions[1])):
 
                 if not env.valid_action2(self.states[2][state[2]] + self.actions[1][k], state[1], i):
-                    # print(self.states[2][state[2]] + self.actions[1][k])
-                    # print(self.q[q_state, i].shape)
-                    # print(self.q[q_state[0], q_state[1], q_state[2], i, k, :].shape)
-                    # print(self.q[q_state[0], q_state[1], q_state[2], i, k, :])
                     q[q_state[0], q_state[1], q_state[2], i, k, :] = -25000
-                    # print(self.q[q_state[0], q_state[1], q_state[2], i, k, :])
-        # print(np.unique(self.q[q_state]))s
         action = np.array(np.unravel_index(q[q_state].argmax(), q[q_state].shape))
         return action
 
